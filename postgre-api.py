@@ -13,25 +13,37 @@ CORS(app)
 cur=conn.cursor()
 
 
+
+# Helper to get column names for songs table
+def get_song_columns():
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'songs'")
+    return [row[0] for row in cur.fetchall()]
+
 @app.route('/songs',methods=["GET"]) # getting all songs 
 def get_songs():
     try:
         cur.execute("select * from songs")
         songs = cur.fetchall()
-        return jsonify(songs), 200
+        columns = get_song_columns()
+        songs_list = [dict(zip(columns, row)) for row in songs]
+        return jsonify(songs_list), 200
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/songs/<int:id>',methods=["GET"]) #getting songs by id
 def get_songs_id(id):
     try:
         cur.execute("select * from songs where id=%s", (id,))
         song = cur.fetchall()
-        return jsonify(song), 200
+        columns = get_song_columns()
+        song_list = [dict(zip(columns, row)) for row in song]
+        return jsonify(song_list), 200
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/songs/search',methods=["GET"]) # searching songs by title
 def search_songs():
@@ -41,7 +53,9 @@ def search_songs():
             return jsonify({'error': 'Missing search query parameter'}), 400
         cur.execute("select * from songs where filename like %s", ('%' + q + '%',))
         songs = cur.fetchall()
-        return jsonify(songs), 200
+        columns = get_song_columns()
+        songs_list = [dict(zip(columns, row)) for row in songs]
+        return jsonify(songs_list), 200
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
@@ -66,7 +80,7 @@ def get_art():
     try:
         cur.execute("select * from artists")
         res = cur.fetchall()
-        artists = [{'id': row[0], 'artist': str(row[1]).strip('"'),'img_url':str(row[2]).strip('"')} for row in res]
+        artists = [{'id': row[0], 'artist': str(row[1]).strip('"')} for row in res]
         return jsonify(artists), 200
     except Exception as e:
         conn.rollback()
@@ -77,7 +91,7 @@ def get_art_id(id):
     try:
         cur.execute("select * from artists where id=%s", (id,))
         artist = cur.fetchall()
-        return jsonify([{'id': row[0], 'artist': str(row[1]).strip('"'),'img_url':str(row[2]).strip('"')} for row in artist]), 200
+        return jsonify([{'id': row[0], 'artist': str(row[1]).strip('"')} for row in artist]), 200
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
@@ -134,6 +148,4 @@ def update_artist(id):
     
     
 if __name__=="__main__":
-
     app.run(debug=True)
-
