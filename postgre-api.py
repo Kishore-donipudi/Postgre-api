@@ -66,7 +66,7 @@ def get_art():
     try:
         cur.execute("select * from artists")
         res = cur.fetchall()
-        artists = [{'id': row[0], 'artist': str(row[1]).strip('"')} for row in res]
+        artists = [{'id': row[0], 'artist': str(row[1]).strip('"'),'img_url':str(row[2]).strip('"')} for row in res]
         return jsonify(artists), 200
     except Exception as e:
         conn.rollback()
@@ -134,4 +134,5 @@ def update_artist(id):
     
     
 if __name__=="__main__":
+
     app.run(debug=True)
