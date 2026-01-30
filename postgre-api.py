@@ -1,3 +1,4 @@
+
 import psycopg2
 from flask import Flask,request,jsonify
 from flask_cors import CORS
@@ -15,6 +16,7 @@ cur=conn.cursor()
 
 
 # Helper to get column names for songs table
+@app.route('/',methods=["GET"])
 def get_song_columns():
     cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'songs'")
     return [row[0] for row in cur.fetchall()]
@@ -24,8 +26,17 @@ def get_songs():
     try:
         cur.execute("select * from songs")
         songs = cur.fetchall()
-        columns = get_song_columns()
-        songs_list = [dict(zip(columns, row)) for row in songs]
+        # Map DB columns to custom keys for frontend
+        songs_list = [
+            {
+                'song_id': row[0],
+                'song_name': row[1],
+                'url': row[2],
+                'type': row[3],
+                'artist_id': row[4]
+            }
+            for row in songs
+        ]
         return jsonify(songs_list), 200
     except Exception as e:
         conn.rollback()
@@ -37,8 +48,16 @@ def get_songs_id(id):
     try:
         cur.execute("select * from songs where id=%s", (id,))
         song = cur.fetchall()
-        columns = get_song_columns()
-        song_list = [dict(zip(columns, row)) for row in song]
+        song_list = [
+            {
+                'song_id': row[0],
+                'song_name': row[1],
+                'url': row[2],
+                'type': row[3],
+                'artist_id': row[4]
+            }
+            for row in song
+        ]
         return jsonify(song_list), 200
     except Exception as e:
         conn.rollback()
@@ -53,8 +72,16 @@ def search_songs():
             return jsonify({'error': 'Missing search query parameter'}), 400
         cur.execute("select * from songs where filename like %s", ('%' + q + '%',))
         songs = cur.fetchall()
-        columns = get_song_columns()
-        songs_list = [dict(zip(columns, row)) for row in songs]
+        songs_list = [
+            {
+                'song_id': row[0],
+                'song_name': row[1],
+                'url': row[2],
+                'type': row[3],
+                'artist_id': row[4]
+            }
+            for row in songs
+        ]
         return jsonify(songs_list), 200
     except Exception as e:
         conn.rollback()
@@ -75,12 +102,88 @@ def add_song():
         conn.rollback()
         return jsonify({'error': str(e)}), 500
 
+# PATCH and DELETE for songs
+@app.route('/songs/<int:id>', methods=["PATCH"])
+def patch_song(id):
+    try:
+        data = request.get_json()
+        fields = []
+        values = []
+        for key, db_col in {
+            'song_name': 'filename',
+            'url': 'url',
+            'type': 'type',
+            'artist_id': 'artist_id'
+        }.items():
+            if key in data:
+                fields.append(f"{db_col}=%s")
+                values.append(data[key])
+        if not fields:
+            return jsonify({'error': 'No valid fields to update'}), 400
+        values.append(id)
+        cur.execute(f"UPDATE songs SET {', '.join(fields)} WHERE id=%s", tuple(values))
+        conn.commit()
+        return jsonify({'message': 'Song updated (patch) successfully'}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/songs/<int:id>', methods=["DELETE"])
+def delete_song(id):
+    try:
+        cur.execute("DELETE FROM songs WHERE id=%s", (id,))
+        conn.commit()
+        return jsonify({'message': 'Song deleted successfully'}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# PATCH and DELETE for artists
+@app.route('/artist/<int:id>', methods=["PATCH"])
+def patch_artist(id):
+    try:
+        data = request.get_json()
+        fields = []
+        values = []
+        for key, db_col in {
+            'name': 'artist_name',
+            'img': 'img_url'
+        }.items():
+            if key in data:
+                fields.append(f"{db_col}=%s")
+                values.append(data[key])
+        if not fields:
+            return jsonify({'error': 'No valid fields to update'}), 400
+        values.append(id)
+        cur.execute(f"UPDATE artists SET {', '.join(fields)} WHERE id=%s", tuple(values))
+        conn.commit()
+        return jsonify({'message': 'Artist updated (patch) successfully'}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/artist/<int:id>', methods=["DELETE"])
+def delete_artist(id):
+    try:
+        cur.execute("DELETE FROM artists WHERE id=%s", (id,))
+        conn.commit()
+        return jsonify({'message': 'Artist deleted successfully'}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
 @app.route('/artist',methods=["GET"]) #getting all artists
 def get_art():
     try:
         cur.execute("select * from artists")
         res = cur.fetchall()
-        artists = [{'id': row[0], 'artist': str(row[1]).strip('"')} for row in res]
+        artists = [
+            {
+                'id': row[0],
+                'name': row[1],
+                'img': row[2]
+            }
+            for row in res
+        ]
         return jsonify(artists), 200
     except Exception as e:
         conn.rollback()
@@ -91,7 +194,15 @@ def get_art_id(id):
     try:
         cur.execute("select * from artists where id=%s", (id,))
         artist = cur.fetchall()
-        return jsonify([{'id': row[0], 'artist': str(row[1]).strip('"')} for row in artist]), 200
+        artist_list = [
+            {
+                'id': row[0],
+                'name': row[1],
+                'img': row[2]
+            }
+            for row in artist
+        ]
+        return jsonify(artist_list), 200
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
@@ -100,10 +211,11 @@ def get_art_id(id):
 def add_artist():
     try:
         data = request.get_json()
-        artist = data.get('artist') or data.get('artist_name')
-        if not artist:
-            return jsonify({'error': 'Missing required field: artist or artist_name'}), 400
-        cur.execute("insert into artists(artist_name) values(%s)", (artist,))
+        name = data.get('name') or data.get('artist') or data.get('artist_name')
+        img = data.get('img') or data.get('img_url')
+        if not name:
+            return jsonify({'error': 'Missing required field: name/artist/artist_name'}), 400
+        cur.execute("insert into artists(artist_name, img_url) values(%s, %s)", (name, img))
         conn.commit()
         return jsonify({'message': 'Artist added successfully'}), 201
     except Exception as e:
@@ -133,12 +245,13 @@ def update_song(id):
 def update_artist(id):
     try:
         data = request.get_json()
-        artist = data.get('artist') or data.get('artist_name')
-        if not artist:
-            return jsonify({'error': 'Missing required field: artist or artist_name'}), 400
+        name = data.get('name') or data.get('artist') or data.get('artist_name')
+        img = data.get('img') or data.get('img_url')
+        if not name:
+            return jsonify({'error': 'Missing required field: name/artist/artist_name'}), 400
         cur.execute(
-            "UPDATE artists SET artist_name=%s WHERE id=%s",
-            (artist, id)
+            "UPDATE artists SET artist_name=%s, img_url=%s WHERE id=%s",
+            (name, img, id)
         )
         conn.commit()
         return jsonify({'message': 'Artist updated successfully'}), 200
